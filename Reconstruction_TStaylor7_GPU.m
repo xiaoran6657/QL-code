@@ -1,4 +1,4 @@
-function [ori_A_adj, P3_tensor] = Reconstruction_TStaylor5_GPU(UAU_state_nodes, SIS_state_nodes)
+function [ori_A_adj, P3_tensor] = Reconstruction_TStaylor7_GPU(UAU_state_nodes, SIS_state_nodes)
   % Reconstruction network by Two-step method with GPU acceleration, 
   %     using the second-order Taylor expansion to step two of the Two-step method
   % (https://doi.org/10.1038/s41467-022-30706-9|www.nature.com/naturecommunications)
@@ -94,15 +94,15 @@ function [ori_A_adj, P3_tensor] = Reconstruction_TStaylor5_GPU(UAU_state_nodes, 
       clear M theta1 theta2;
 
       % 分块计算A6 G5 G5_Delta，避免内存限制
-      G5 = gpuArray.zeros(n2, n2choose2^2, "double");       % n2 × n2*n2choose2
+      G5 = gpuArray.zeros(n2, n2choose2^2, "single");       % n2 × n2*n2choose2
       G5_Delta = zeros(n2choose2, n2choose2^2, "single");   % n2choose2 × n2choose2^2
 
       block_length = 500;  % 每个块的大小，不是越大越好，过大的块会超出GPU专用内存大小，导致性能降低
       num_blocks = ceil(m1 / block_length);  % 计算块的数量
-      % 预计算严格下三角部分的索引
+      
+      % 一次性计算所有行的temp2矩阵（严格下三角元素乘积）
       mask = tril(true(n2, n2), -1);
       [k_indices, i_indices] = find(mask);
-      % 一次性计算所有行的temp2矩阵（严格下三角元素乘积）
       temp2_matrix = A2(:, gpuArray(k_indices)) .* A2(:, gpuArray(i_indices)); % GPU数组，每行为temp2
       
       for k = 1:num_blocks  % 循环每个块
@@ -199,7 +199,8 @@ end
 %% LM优化器
 function theta = GALMoptimizer_GPU(theta,G1,G2,G3,G4,G5,G1_Delta,G2_Delta,G3_Delta,G4_Delta,G5_Delta,Y1_gpu,Y2_gpu)
     nvars = sum(size(G2));        % 待求解变量维度（根据实际问题调整）
-% ------------------- GA全局搜索 -------------------
+%{
+  % ------------------- GA全局搜索 -------------------
   popSize = 50;                 % GA种群大小
   numElite = 5;                 % GA中保留的较优解数量
 
@@ -209,8 +210,8 @@ function theta = GALMoptimizer_GPU(theta,G1,G2,G3,G4,G5,G1_Delta,G2_Delta,G3_Del
   % 配置GA参数
   optionsGA = optimoptions('ga', ...
     'PopulationType', 'bitstring', ...    % 01变量
-    'PopulationSize', 50, ...             % GA种群大小
-    'MaxGenerations', 30, ...              % 最大迭代次数
+    'PopulationSize', 10, ...             % GA种群大小
+    'MaxGenerations', 3, ...              % 最大迭代次数
     'CrossoverFraction', 0.8, ...
     'MutationFcn', @mutationuniform, ...  % 均匀变异（可自定义）
     'Display', 'iter');
@@ -243,10 +244,18 @@ function theta = GALMoptimizer_GPU(theta,G1,G2,G3,G4,G5,G1_Delta,G2_Delta,G3_Del
   ub = ones(nvars, 1);
 
   % 调用求解器
+  %{
+  bestResnorm = inf;
   for i = 1:size(eliteSolutions,1)
     [x_opt, resnorm] = lsqnonlin(fun, eliteSolutions(i,:), lb, ub, options_lsq);
-
-  theta = x_opt; 
+    if resnorm < bestResnorm
+        bestResnorm = resnorm;
+        theta = x_opt;
+        fprintf("最优解更新，resnorm: %.3e", resnorm);
+    end
+  end
+  %}
+  [theta, resnorm] = lsqnonlin(fun, gather(double(theta)), lb, ub, options_lsq);
 
 end
 
@@ -274,20 +283,23 @@ function [R, J]= compute_residual(theta,G1,G2,G3,G4,G5,G1_Delta,G2_Delta,G3_Delt
   R = [G1*S1 + G2*S2 + term1 + term2 + term3 - Y1_gpu; G1_Delta*S1 + G2_Delta*S2 + term1D + term2D + term3D - Y2_gpu];
   R = gather(R);  % lsqnonlin不支持gpuArray
   % 添加松弛项（鼓励变量接近 0/1）
-  lambda = 0.1;  % 松弛系数
-  penalty = (lambda * (sum(S1.*(1-S1))) + lambda * (sum(S2.*(1-S2)))) / (n2 + n2choose2);
-  R = R + double(gather(penalty));
+  %lambda = 0.1;  % 松弛系数
+  %penalty = (lambda * (sum(S1.*(1-S1))) + lambda * (sum(S2.*(1-S2)))) / (n2 + n2choose2);
+  %R = R + double(gather(penalty));
 
   % 雅可比计算
   I_N = eye(n2, 'gpuArray');
-  I_C = eye(n2choose2, 'double');
-  
+  I_C = eye(n2choose2, 'gpuArray');
+  %I_C = eye(n2choose2, 'double');
+
   % 计算非线性项的导数
   D_S1 = kron(S1, I_N) + kron(I_N, S1);
-  D_S2 = kron(gather(S2), I_C) + kron(I_C, gather(S2));
+  D_S2 = kron(S2, I_C) + kron(I_C, S2);
+  %D_S2 = kron(gather(S2), I_C) + kron(I_C, gather(S2));
   
   % 雅可比矩阵
-  J = [G1 + G3 * D_S1 + 2 * G4 * kron(I_N, S2), G2 + 2 * G4 * kron(S1, I_C) + double(gpuArray(gather(G5) * D_S2)); G1_Delta + G3_Delta * D_S1 + 2 * G4_Delta * kron(I_N, S2), G2_Delta + 2 * G4_Delta * kron(S1, I_C) + double(gpuArray(G5_Delta * D_S2))];
+  J = [G1 + G3 * D_S1 + 2 * G4 * kron(I_N, S2), G2 + 2 * G4 * kron(S1, I_C) + double(G5 * D_S2); ...
+      G1_Delta + G3_Delta * D_S1 + 2 * G4_Delta * kron(I_N, S2), G2_Delta + 2 * G4_Delta * kron(S1, I_C) + double(gpuArray(G5_Delta * gather(D_S2)))];
   J = gather(J);
 end
 

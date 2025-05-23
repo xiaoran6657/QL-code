@@ -35,7 +35,10 @@ function [ori_A_adj, P3_tensor] = Reconstruction_TStaylor5_GPU(UAU_state_nodes, 
       %%%step one --- Taylor1
       % solve 两个gamma（即向量x）
       [X, Y, A2]=Extract(UAU_state_nodes, SIS_state_nodes, nod);
-      theta1=sum(A2,2);  % \={theta}^i(t_m), in Eq(4.22)
+      %theta1=sum(A2,2);  % \={theta}^i(t_m), in Eq(4.22)
+      theta1 = sum(A2, 2) - A2(:,nod);  % 对每一行，去除nod节点贡献
+      A2_nodRemove = A2;
+      A2_nodRemove(:, nod) = 0;  % 将nod节点的所有状态置为0（去除本身节点影响）
 
       x0 = 0.9999;
       x = fsolve(@(x) myfunTS(x,X,Y,theta1),x0,options1);   % solve TS.Eq(4.27), x=alpha^i
@@ -74,7 +77,8 @@ function [ori_A_adj, P3_tensor] = Reconstruction_TStaylor5_GPU(UAU_state_nodes, 
       theta2=gpuArray.zeros(m1,1,'double');
       A3 = gpuArray.zeros(m1,n2choose2,'double');       % 求A3，即[\={s}^j * \={s}^k]_{m1 \times C_N^2}
       for j=1:m1
-        temp1=A2(j,:)'*A2(j,:);
+        A2_nodRemove_j = A2_nodRemove(j,:);
+        temp1=A2_nodRemove_j'*A2_nodRemove_j;
         A3(j,:)=(temp1(logical(tril(ones(size(temp1)),-1))))';  % tril(*,-1)取严格下三角，从下三角矩阵到一行的转换通过列优先顺序实现
         theta2(j,1)=sum(sum(temp1-diag(diag(temp1))))/2;  % \={theta}^i_{Delta}(t_m), in Eq(4.23)
       end
@@ -94,7 +98,7 @@ function [ori_A_adj, P3_tensor] = Reconstruction_TStaylor5_GPU(UAU_state_nodes, 
       clear M theta1 theta2;
 
       % 分块计算A6 G5 G5_Delta，避免内存限制
-      G5 = gpuArray.zeros(n2, n2choose2^2, "double");       % n2 × n2*n2choose2
+      G5 = gpuArray.zeros(n2, n2choose2^2, "single");       % n2 × n2*n2choose2
       G5_Delta = zeros(n2choose2, n2choose2^2, "single");   % n2choose2 × n2choose2^2
 
       block_length = 500;  % 每个块的大小，不是越大越好，过大的块会超出GPU专用内存大小，导致性能降低
@@ -237,7 +241,7 @@ function theta = GALMoptimizer_GPU(theta,G1,G2,G3,G4,G5,G1_Delta,G2_Delta,G3_Del
     'StepTolerance', 1e-4, ...                    % 放宽步长容差
     'FunctionTolerance', 1e-4, ...             % 放宽函数值容差
     'Display', 'iter', ...
-    'MaxIterations', 100);
+    'MaxIterations', 40);
 
   % 变量边界（强制变量在[0,1]区间）
   lb = zeros(nvars, 1);

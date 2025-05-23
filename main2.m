@@ -1,11 +1,11 @@
 clear,clc;
 
 %%
-pathname1 = '.\matData\';  % 单纯复形
-pathname3 = '.\RematData\';
+pathname1 = '..\matData\';  % 单纯复形
+pathname3 = '..\RematData\';
 
-pathname2 = '.\matData2\';  % 超图
-pathname4 = '.\RematData2\';
+pathname2 = '..\matData2\';  % 超图
+pathname4 = '..\RematData2\';
 
 % 获取指定文件夹下的所有 .mat 文件
 files = dir(fullfile(pathname1, '*.mat'));
@@ -35,7 +35,7 @@ for i = 1:length(fileNames)
         %[ori_A_adj, P3_tensor] = Reconstruction_TS(UAU_state_nodes, SIS_state_nodes, Lambda);
         %[ori_A_adj, P3_tensor] = Reconstruction_TS_GPU(UAU_state_nodes, SIS_state_nodes);
         %[ori_A_adj, P3_tensor] = Reconstruction_TStaylor2_GPUUUU(UAU_state_nodes, SIS_state_nodes);
-        [ori_A_adj, P3_tensor] = Reconstruction_TStaylor6_GPU(UAU_state_nodes, SIS_state_nodes);
+        [ori_A_adj, P3_tensor] = Reconstruction_TStaylor5_GPU(UAU_state_nodes, SIS_state_nodes);
         save(strcat(pathname3, 'TSL', num2str(Lambda), '_', filename), 'A1', 'A2', 'B', 'ori_A_adj', 'P3_tensor');
     end
 end
