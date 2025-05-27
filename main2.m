@@ -65,12 +65,12 @@ for i = 1:length(fileNames2)
         numbers = cellfun(@(x) str2double(x{1}), matches); % 将捕获的数字字符串转换为数值
 
         load(strcat(pathname3, filename));
-        P3_tensor = -P3_tensor; % 重构结果由负变正
-        ori_A_adj = -ori_A_adj; % 重构结果由负变正
-        [ori_A_bin, triangles_pred] = truncation(ori_A_adj, P3_tensor);
+        %P3_tensor = -P3_tensor; % 重构结果由负变正
+        %ori_A_adj = -ori_A_adj; % 重构结果由负变正
+        %[ori_A_bin, triangles_pred] = truncation(ori_A_adj, P3_tensor);
         %[ori_A_bin, triangles_pred] = truncation_bayes(ori_A_adj, P3_tensor, A1, A2);
-        [ACC, F1, ACC_tri, F1_tri] = EvaluationIndicators_Cal2(A1, A2, ori_A_bin, triangles_pred);
-        %[ACC, F1, ACC_tri, F1_tri] = EvaluationIndicators_Cal3(A1, A2, ori_A_adj, P3_tensor);
+        %[ACC, F1, ACC_tri, F1_tri] = EvaluationIndicators_Cal2(A1, A2, ori_A_bin, triangles_pred);
+        [ACC, F1, ACC_tri, F1_tri] = EvaluationIndicators_Cal3(A1, A2, ori_A_adj, P3_tensor);
         ACC_two_body(k, :) = [numbers, ACC]; ACC_three_body(k, :) = [numbers, ACC_tri];
         F1_two_body(k, :) = [numbers, F1]; F1_three_body(k, :) = [numbers, F1_tri];
         k = k+1;

@@ -95,7 +95,7 @@ function [ori_A_adj, P3_tensor] = Reconstruction_TStaylor5_GPU(UAU_state_nodes, 
       Oi = M.*(1+M)./(2.*(1-M+eps).^3);                         % \={O}^i(t_m), [m1,1], in TST2.Eq(4.31)
       Vi = M./((1-M+eps).^2)-2.*Oi.*log(M);                     % \={V}^i(t_m), [m1,1], in TST2.Eq(4.31)
       Wi = M./(1-M+eps)-M.*log(M)./((1-M+eps).^2)+Oi.*(log(M).^2);  % \={W}^i(t_m), [m1,1], in TST2.Eq(4.31)
-      clear M theta1 theta2;                                        % 注意可能的(1-M==0)的情况，会引发NaN error
+      clear M theta1 theta2;
 
       % 分块计算A6 G5 G5_Delta，避免内存限制
       G5 = gpuArray.zeros(n2, n2choose2^2, "single");       % n2 × n2*n2choose2

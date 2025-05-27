@@ -24,6 +24,7 @@ function [ACC, F1, ACC_tri, F1_tri] = EvaluationIndicators_Cal3(A1, A2, ori_A_ad
     %Truncate the final two-body matrices
     Pl = ori_A_adj(:);
     thresh2 = threshold_PR(A1(:), Pl);  % PR曲线选择最佳阈值
+    %thresh2 = graythresh(Pl);  % Otsu's Method, 最大类间方差法
     for i = 1:n
         a = ori_A_adj(i,:);
         a(a>=thresh2) = 1;
@@ -48,7 +49,7 @@ function [ACC, F1, ACC_tri, F1_tri] = EvaluationIndicators_Cal3(A1, A2, ori_A_ad
         row = []; col = [];
         for j = 1:n
            for k = 1:n
-                if P3(j,k)>thresh2 && (ismember(j,neig) || ismember(k,neig))
+                if P3(j,k)>thresh2 && (ismember(j,neig) && ismember(k,neig))
                     row = [row; j];
                     col = [col; k];
                 end

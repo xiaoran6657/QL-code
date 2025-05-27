@@ -27,16 +27,16 @@ function [ori_A_bin, triangles_pred] = truncation(ori_A_adj, P3_tensor)
         Pl(Pl>1) = 1; Pl(Pl<0)=0;
         thresh2 = graythresh(Pl);  % Otsu's Method, 最大类间方差法
 
-        [row, col] = find(P3 >= thresh2); % 找到小于阈值元素的位置索引，直接使用row和col作为节点编号
-        %row = []; col = [];
-        %for j = 1:n
-        %   for k = 1:n
-        %        if P3(j,k)>thresh2 && (ismember(j,neig) || ismember(k,neig))
-        %            row = [row; j];
-        %            col = [col; k];
-        %        end
-        %    end
-        %end
+        %[row, col] = find(P3 >= thresh2); % 找到小于阈值元素的位置索引，直接使用row和col作为节点编号
+        row = []; col = [];
+        for j = 1:n
+           for k = 1:n
+                if P3(j,k)>=thresh2 && (ismember(j,neig) || ismember(k,neig))
+                    row = [row; j];
+                    col = [col; k];
+                end
+            end
+        end
 
         % 这里直接使用row和col作为节点编号
         triangles_i = [repmat(i, length(row), 1), row, col]; % 生成临时矩阵

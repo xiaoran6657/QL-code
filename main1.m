@@ -12,7 +12,7 @@ nNodes_list = [100, 150];  % Number of nodes
 K1s = [10, 12, 14, 16, 18];  % Average degree of two-body interaction
 K2s = [2, 3, 4, 5, 6];    % Average degree of three-body interaction
 
-%dynamic parameters
+%dynamics parameters
 %Virtual a
 lambda1 = 0.1;  % Lambda: probability of informed between two-body
 lambda2 = 0.9;  % Lambda_Delta: probability of informed between three-body
