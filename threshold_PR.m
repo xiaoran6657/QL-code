@@ -1,4 +1,4 @@
-function optimal_threshold = threshold_PR(y_true, y_prob)
+function optimal_threshold = threshold_PR(y_true, y_prob, show)
 
     % 生成示例数据（稀疏网络，正类占比5%）
     rng(42);
@@ -34,26 +34,16 @@ function optimal_threshold = threshold_PR(y_true, y_prob)
     optimal_threshold = thresholds(optimal_idx);
     
     % 步骤3：可视化
-    figure;
-    plot(recall, precision, 'LineWidth', 2);
-    hold on;
-    scatter(recall(optimal_idx), precision(optimal_idx), 100, 'r*');
-    xlabel('Recall');
-    ylabel('Precision');
-    title('PR Curve (Imbalanced Data)');
-    grid on;
-    legend('PR Curve', 'Optimal Threshold', 'Location', 'southwest');
-    
-    % 输出结果
-    %y_pred = (y_prob >= optimal_threshold);
-        
-    %TP = sum(y_true(y_pred) == 1);
-    %FP = sum(y_true(y_pred) == 0);
-    %FN = sum(y_true(~y_pred) == 1);
-    %TN = size(y_true, 1) - TP - FP - FN;
-
-    %fprintf('最佳阈值: %.3f\n', optimal_threshold);
-    %fprintf('Precision: %.3f, Recall: %.3f, F1: %.3f\n TP:%d, FP:%d, FN:%d, TN:%d', ...
-    %        precision(optimal_idx), recall(optimal_idx), f1_scores(optimal_idx), TP, FP, FN, TN);
+    if show
+        figure;
+        plot(recall, precision, 'LineWidth', 2);
+        hold on;
+        scatter(recall(optimal_idx), precision(optimal_idx), 100, 'r*');
+        xlabel('Recall');
+        ylabel('Precision');
+        title('PR Curve (Imbalanced Data)');
+        grid on;
+        legend('PR Curve', 'Optimal Threshold', 'Location', 'southwest');
+    end
 
 end

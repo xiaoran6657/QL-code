@@ -5,7 +5,6 @@ function [ori_A_adj, P3_tensor] = Reconstruction_TStaylor5_GPU(UAU_state_nodes, 
   % Input:
       % UAU_state_nodes: the node state matrix of the virtual layer(UAU), [T, n]
       % SIS_state_nodes: the node state matrix of the physical layer(SIS), [T, n]
-      % Lambda: the regularization parameter
   % Output:
       % ori_A_adj: the reconstructed network two-body interaction, [n, n]
       % P3_tensor: the reconstructed network three-body interaction, [n, n, n]
@@ -29,7 +28,7 @@ function [ori_A_adj, P3_tensor] = Reconstruction_TStaylor5_GPU(UAU_state_nodes, 
   options2 = statset('Display', 'off');
 
   % 循环求解所有节点的一阶边和二阶边
-  for nod = 1:n
+  parfor nod = 1:n
       fprintf("nod: %d \n", nod);
       tic; % 开始计时
       %%%step one --- Taylor1
@@ -57,10 +56,10 @@ function [ori_A_adj, P3_tensor] = Reconstruction_TStaylor5_GPU(UAU_state_nodes, 
           C(i,1:n) = sum(Y.*A2(:,i).*g .* A2, 1);
           D(i) = sum((X-Y.*f).*A2(:,i));            % Y_1(i), TS.Eq(4.37)
       end
-      clear theta1 f g;
+      %clear theta1 f g;
       
       TS_X1 = lasso(gather(C), gather(D), 'Lambda', Lambda, 'RelTol', 1e-4, 'Options', options2);
-      clear C D;
+      %clear C D;
       
       TS_X1 = gpuArray(-TS_X1);
       tru = fun_cut(TS_X1);  % Find truncation value (on CPU)
@@ -95,11 +94,13 @@ function [ori_A_adj, P3_tensor] = Reconstruction_TStaylor5_GPU(UAU_state_nodes, 
       Oi = M.*(1+M)./(2.*(1-M+eps).^3);                         % \={O}^i(t_m), [m1,1], in TST2.Eq(4.31)
       Vi = M./((1-M+eps).^2)-2.*Oi.*log(M);                     % \={V}^i(t_m), [m1,1], in TST2.Eq(4.31)
       Wi = M./(1-M+eps)-M.*log(M)./((1-M+eps).^2)+Oi.*(log(M).^2);  % \={W}^i(t_m), [m1,1], in TST2.Eq(4.31)
-      clear M theta1 theta2;                                        % 注意可能的(1-M==0)的情况，会引发NaN error
+      %clear M theta1 theta2;                                        % 注意可能的(1-M==0)的情况，会引发NaN error
 
       % 分块计算A6 G5 G5_Delta，避免内存限制
       G5 = gpuArray.zeros(n2, n2choose2^2, "single");       % n2 × n2*n2choose2
       G5_Delta = zeros(n2choose2, n2choose2^2, "single");   % n2choose2 × n2choose2^2
+      G4 = gpuArray.zeros(n2, n2*n2choose2);
+      G4_Delta = gpuArray.zeros(n2choose2, n2*n2choose2);
 
       block_length = 500;  % 每个块的大小，不是越大越好，过大的块会超出GPU专用内存大小，导致性能降低
       num_blocks = ceil(m1 / block_length);  % 计算块的数量
@@ -117,6 +118,7 @@ function [ori_A_adj, P3_tensor] = Reconstruction_TStaylor5_GPU(UAU_state_nodes, 
         Y_part = Y(start_index:end_index, :);
         Oi_part = Oi(start_index:end_index, :);
         A6_part = gpuArray.zeros(current_block_size, n2choose2^2,'single');
+        A5_part = gpuArray.zeros(current_block_size, n2*n2choose2);
 
         % 计算每行的Kronecker积
         for j = start_index:end_index
@@ -124,39 +126,45 @@ function [ori_A_adj, P3_tensor] = Reconstruction_TStaylor5_GPU(UAU_state_nodes, 
             % 使用矩阵乘法和reshape替代kron函数
             kron_product = reshape(temp2' * temp2, 1, []);
             A6_part(j-start_index+1, :) = single(kron_product); % 保持数据在GPU上
+
+            kron_product = reshape(A2(j,:)'*temp2, 1, []);
+            A5_part(j-start_index+1, :) = kron_product;
         end
 
         G5 = G5 + alpha_Delta^2*(Y_part .* A2(start_index:end_index, :))' * (Oi_part .* A6_part);          % n2 × n2choose2^2
         G5_Delta = G5_Delta + gather(alpha_Delta)^2*gather((Y_part.* A3(start_index:end_index, :))') * (gather(Oi_part) .* gather(A6_part));     % n2choose2 × n2choose2^2
+
+        G4 = G4 + alpha*alpha_Delta*(Y_part .* A2(start_index:end_index, :))' * (Oi_part .* A5_part);          % n2 × n2choose2^2
+        G4_Delta = G4_Delta + alpha*alpha_Delta*(Y_part.* A3(start_index:end_index, :))' * (Oi_part .* A5_part);
       end
-      clear Oi_part Y_part A6_part temp2 start_index end_index current_block_size mask k_indices i_indices kron_product;
+      %clear Oi_part Y_part A6_part temp2 start_index end_index current_block_size mask k_indices i_indices kron_product;
 
       % 向量化计算A5 (kron(A2j, temp2))
-      A5 = reshape(A2 .* permute(temp2_matrix, [1 3 2]), m1, n2 * n2choose2);
-      clear temp2_matrix;
+      %A5 = reshape(A2 .* permute(temp2_matrix, [1 3 2]), m1, n2 * n2choose2);
+      %clear temp2_matrix;
       % G上、D上，一阶边
-      G4 = alpha*alpha_Delta*(Y .* A2)' * (Oi .* A5);          % n2 × n2*n2choose2
-      G4_Delta = alpha*alpha_Delta*(Y .* A3)' * (Oi .* A5);    % n2choose2 × n2*n2choose2
-      clear A5;
+      %G4 = alpha*alpha_Delta*(Y .* A2)' * (Oi .* A5);          % n2 × n2*n2choose2
+      %G4_Delta = alpha*alpha_Delta*(Y .* A3)' * (Oi .* A5);    % n2choose2 × n2*n2choose2
+      %clear A5;
 
       % 向量化计算A4 (kron(A2j, A2j))
       A4 = reshape(A2 .* permute(A2, [1 3 2]), m1, n2^2);  % 避免显式循环
       G3 = alpha^2*(Y .* A2)' * (Oi .* A4);          % n2 × n2^2
       G3_Delta = alpha^2*(Y .* A3)' * (Oi .* A4);    % n2choose2 × n2^2
-      clear A4;
+      %clear A4;
 
       G1 = alpha*(Y .* A2)' * (Vi .* A2);          % n2 × n2
       G2 = alpha_Delta*(Y .* A2)' * (Vi .* A3);          % n2 × n2choose2
       G1_Delta = alpha*(Y .* A3)' * (Vi .* A2);    % n2choose2 × n2
       
       D1 = sum((X - Y .* Wi) .* A2, 1)';     % n2 × 1      
-      clear A2;
+      %clear A2;
 
       G2_Delta = alpha_Delta*(Y .* A3)' * (Vi .* A3);    % n2choose2 × n2choose2
-      clear Vi;
+      %clear Vi;
       
       D2 = sum((X - Y .* Wi) .* A3, 1)';     % n2choose2 × n2choose2^2
-      clear X Y Wi A3;
+      %clear X Y Wi A3;
       
       % 混合LM-牛顿法优化
       %theta0 = lasso(gather([G1, G2;G1_Delta, G2_Delta]),gather([D1;D2]),'Lambda', Lambda,'RelTol',10^-4, Options=options2); % 初始值（GPU）
@@ -166,7 +174,7 @@ function [ori_A_adj, P3_tensor] = Reconstruction_TStaylor5_GPU(UAU_state_nodes, 
       M_poly = @(x) x - 0.5*G*x + 0.25*G^2*x;  % 最小二乘多项式
 
       [X0, flag] = gmres(G, D, 3, 1e-3, 20, M_poly);  % 使用GMRES求解
-      clear G D; 
+      %clear G D; 
       
       % 解GX=D，得P0=[P1 P2]'=[eta1 eta2]'是一个列向量
       %residual = @(theta) compute_residual(theta,G1,G2,G3,G4,G5,G1_Delta,G2_Delta,G3_Delta,G4_Delta,G5_Delta,D1,D2);
@@ -238,10 +246,10 @@ function theta = GALMoptimizer_GPU(theta,G1,G2,G3,G4,G5,G1_Delta,G2_Delta,G3_Del
   options_lsq = optimoptions('lsqnonlin', ...
     'Algorithm', 'trust-region-reflective', ...
     'SpecifyObjectiveGradient', true, ...  % 使用自定义雅可比
-    'StepTolerance', 1e-4, ...                    % 放宽步长容差
+    'StepTolerance', 1e-8, ...                    % 放宽步长容差
     'FunctionTolerance', 1e-4, ...             % 放宽函数值容差
     'Display', 'iter', ...
-    'MaxIterations', 20);
+    'MaxIterations', 40);
 
   % 变量边界（强制变量在[0,1]区间）
   lb = zeros(nvars, 1);
@@ -488,10 +496,7 @@ function [X,Y,A2]=Extract(SA,SB,nod)
   % Output:
       % X: \={Q}^i(t_m), [m1,1], in Eq(4.8)
       % Y: \={R}^i(t_m), [m1,1], in Eq(4.8)
-      % theta1: \={theta}^i(t_m), in Eq(4.22)
-      % theta2: \={theta}^i_{Delta}(t_m), in Eq(4.23)
       % A2: Filtered node state matrix, \={s}^i(t), in Eq(4.38)
-      % A3: \={s}^j * \={s}^k, in Eq(4.39)
 
   [m,n]=size(SA); % [T, n]
   A1=SA(:,nod);   % Extract Virtual layer's column i, [1,n]

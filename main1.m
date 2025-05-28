@@ -6,7 +6,7 @@ rng(12);
 
 pathname = '.\matData\';  % 单纯复形
 %pathname = '.\matData2\';  % 超图
-networkType = 'BA';
+networkType = 'ER';
 % Parameters for the networks
 nNodes_list = [100, 150];  % Number of nodes
 K1s = [10, 12, 14, 16, 18];  % Average degree of two-body interaction
