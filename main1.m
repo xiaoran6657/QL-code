@@ -6,12 +6,17 @@ rng(12);
 
 pathname = '.\matData\';  % 单纯复形
 %pathname = '.\matData2\';  % 超图
-networkType = 'ER';
 % Parameters for the networks
 nNodes_list = [100, 150];  % Number of nodes
 K1s = [10, 12, 14, 16, 18];  % Average degree of two-body interaction
 K2s = [2, 3, 4, 5, 6];    % Average degree of three-body interaction
 
+nNodes = 100;
+networkType = 'ER';
+k1 = 18;
+k2 = 6;
+Timespan = 100000;
+T = 1;
 %dynamics parameters
 %Virtual a
 lambda1 = 0.1;  % Lambda: probability of informed between two-body
@@ -25,7 +30,6 @@ mu = 0.8;       % Recovery rate
 rhoa = 0.2;     % initial density of A
 rhob = 0.25;    % initial density of I
 
-Timespan = [1000, 2000, 4000, 7000, 10000, 15000, 20000, 30000, 40000, 50000];
 for nNodes=nNodes_list
     for k1=K1s
         for k2 = K2s

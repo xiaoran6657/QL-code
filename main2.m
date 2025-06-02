@@ -70,7 +70,7 @@ for i = 1:length(fileNames2)
         %[ori_A_bin, triangles_pred] = truncation(ori_A_adj, P3_tensor);
         %[ori_A_bin, triangles_pred] = truncation_bayes(ori_A_adj, P3_tensor, A1, A2);
         %[ACC, F1, ACC_tri, F1_tri] = EvaluationIndicators_Cal2(A1, A2, ori_A_bin, triangles_pred);
-        [ACC, F1, ACC_tri, F1_tri] = EvaluationIndicators_Cal3(A1, A2, ori_A_adj, P3_tensor);
+        [ACC, F1, ACC_tri, F1_tri] = EvaluationIndicators_Cal4(A1, A2, ori_A_adj, P3_tensor);
         ACC_two_body(k, :) = [numbers, ACC]; ACC_three_body(k, :) = [numbers, ACC_tri];
         F1_two_body(k, :) = [numbers, F1]; F1_three_body(k, :) = [numbers, F1_tri];
         k = k+1;
