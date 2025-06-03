@@ -523,3 +523,67 @@ function [X,Y,A2]=Extract(SA,SB,nod)
     end
   end
 end
+
+% 预计算严格下三角部分的索引
+mask = tril(true(n2, n2), -1);
+[k_indices, i_indices] = find(mask);
+% 一次性计算所有行的temp2矩阵（严格下三角元素乘积）
+temp2_matrix = A2(:, gpuArray(k_indices)) .* A2(:, gpuArray(i_indices)); % GPU数组，每行为temp2
+
+A6 = reshape(temp2_matrix .* permute(temp2_matrix, [1 3 2]), m1, n2choose2 * n2choose2);
+G5 = alpha_Delta^2 * (Y .* A2)' * (Oi .* A6);          % n2 × n2choose2^2
+G5_Delta = alpha_Delta^2 * (Y .* A3)' * (Oi .* A6);    % n2choose2 × n2choose2^2
+
+A5 = reshape(A2 .* permute(temp2_matrix, [1 3 2]), m1, n2 * n2choose2);
+G4 = 2*alpha*alpha_Delta*(Y .* A2)' * (Oi .* A5);          % n2 × n2*n2choose2
+G4_Delta = 2*alpha*alpha_Delta*(Y .* A3)' * (Oi .* A5);    % n2choose2 × n2*n2choose2
+
+% 向量化计算A4 (kron(A2j, A2j))
+A4 = reshape(A2 .* permute(A2, [1 3 2]), m1, n2^2);  % 避免显式循环
+G3 = alpha^2*(Y .* A2)' * (Oi .* A4);          % n2 × n2^2
+G3_Delta = alpha^2*(Y .* A3)' * (Oi .* A4);    % n2choose2 × n2^2
+
+G1 = alpha*(Y .* A2)' * (Vi .* A2);          % n2 × n2
+G2 = alpha_Delta*(Y .* A2)' * (Vi .* A3);          % n2 × n2choose2
+
+G1_Delta = alpha*(Y .* A3)' * (Vi .* A2);    % n2choose2 × n2
+G2_Delta = alpha_Delta*(Y .* A3)' * (Vi .* A3);    % n2choose2 × n2choose2
+
+D1 = sum((X - Y .* Wi) .* A2, 1)';     % n2 × 1      
+D2 = sum((X - Y .* Wi) .* A3, 1)';     % n2choose2 × n2choose2^2
+
+[n2, n2choose2]=size(G2);
+S1 = gpuArray(theta(1:n2));
+S2 = gpuArray(theta(n2+1:end));
+S1 = S1(:);  S2 = S2(:);  % 强制列向量
+
+% 残差计算
+kron_S1S1 = reshape(S1 * S1', 1, n2, n2);
+kron_S1S2 = reshape(S1 * S2', 1, n2, n2choose2);
+kron_S2S2 = reshape(S2 * S2', 1, n2choose2, n2choose2);
+
+term1 = sum(reshape(G3, size(G3,1), n2, n2) .* kron_S1S1, [2,3]);
+term2 = 2 * sum(reshape(G4, size(G4,1), n2, n2choose2) .* kron_S1S2, [2,3]);
+term3 = double(sum(reshape(G5, size(G5,1), n2choose2, n2choose2) .* kron_S2S2, [2,3]));
+
+term1D = sum(reshape(G3_Delta, size(G3_Delta,1), n2, n2) .* kron_S1S1, [2,3]);
+term2D = 2 * sum(reshape(G4_Delta, size(G4_Delta,1), n2, n2choose2) .* kron_S1S2, [2,3]);
+term3D = double(gpuArray(sum(reshape(G5_Delta, size(G5_Delta,1), n2choose2, n2choose2) .* gather(kron_S2S2), [2,3])));
+% 残差
+R = [G1*S1 + G2*S2 + term1 + term2 + term3 - Y1_gpu; G1_Delta*S1 + G2_Delta*S2 + term1D + term2D + term3D - Y2_gpu];
+R = gather(R);
+
+% 雅可比计算
+I_N = eye(n2, 'gpuArray');
+I_C = eye(n2choose2, 'double');
+
+% 计算非线性项的导数
+D_S1 = kron(S1, I_N) + kron(I_N, S1);
+D_S2 = kron(gather(S2), I_C) + kron(I_C, gather(S2));
+
+% 雅可比矩阵
+J = [G1 + G3 * D_S1 + 2 * G4 * kron(I_N, S2),...
+     G2 + 2 * G4 * kron(S1, I_C) + double(gpuArray(gather(G5) * D_S2));...
+     G1_Delta + G3_Delta * D_S1 + 2 * G4_Delta * kron(I_N, S2),...
+     G2_Delta + 2 * G4_Delta * kron(S1, I_C) + double(gpuArray(G5_Delta * D_S2))];
+J = gather(J);

@@ -2,7 +2,7 @@
 
 clear, clc
 % Set a fixed random seed for reproducibility
-rng(12);
+
 
 pathname = '.\matData\';  % 单纯复形
 %pathname = '.\matData2\';  % 超图
@@ -11,6 +11,7 @@ nNodes_list = [100, 150];  % Number of nodes
 K1s = [10, 12, 14, 16, 18];  % Average degree of two-body interaction
 K2s = [2, 3, 4, 5, 6];    % Average degree of three-body interaction
 
+rng(12);
 nNodes = 100;
 networkType = 'ER';
 k1 = 18;
