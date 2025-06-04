@@ -67,7 +67,14 @@ function [ACC, F1, ACC_tri, F1_tri] = EvaluationIndicators_Cal4(A1, A2, ori_A_ad
             end
         end
     end
-    threshold_PR3D(A2, candidates, scores);  % PR曲线选择最佳阈值
+    metrics = threshold_PR3D(A2, candidates, scores, n);  % PR曲线选择最佳阈值
+
+    disp('二阶：\n');
+    fprintf('tp: %d, fp: %d, fn: %d, tn: %d\n', metrics.TP, metrics.FP, metrics.FN, metrics.TN);
+    fprintf('ACC: %.4f, Precision: %.4f, Recall: %.4f, F1: %.4f\n', metrics.Acc, metrics.Precision, metrics.Recall, metrics.F1);
+
+    ACC_tri = metrics.Acc;
+    F1_tri = metrics.F1;
 end
 
 function optimal_threshold = threshold_PR(y_true, y_prob, show)
@@ -120,7 +127,7 @@ function optimal_threshold = threshold_PR(y_true, y_prob, show)
 
 end
 
-function [best_threshold, best_f1, A2_pred, metrics] = threshold_PR3D(A2, candidates, scores)
+function metrics = threshold_PR3D(A2, candidates, scores, n)
     % 数据准备与预处理
     gt_set = unique(A2, 'rows'); % 去除重复的真实三元组
     total_positives = size(gt_set, 1);
@@ -206,8 +213,10 @@ function [best_threshold, best_f1, A2_pred, metrics] = threshold_PR3D(A2, candid
     tp_count = size(tp_set, 1);
     fp_count = size(fp_set, 1);
     fn_count = size(fn_set, 1);
+    tn_count = nchoosek(n,3) - tp_count - fp_count - fn_count;
     
     % 计算评估指标
+    acc = (tn_count + tp_count) / nchoosek(n,3);
     if (tp_count + fp_count) > 0
         precision = tp_count / (tp_count + fp_count);
     else
@@ -231,6 +240,8 @@ function [best_threshold, best_f1, A2_pred, metrics] = threshold_PR3D(A2, candid
         'TP', tp_count, ...
         'FP', fp_count, ...
         'FN', fn_count, ...
+        'TN', tn_count, ...
+        'Acc', acc, ...
         'Precision', precision, ...
         'Recall', recall, ...
         'F1', f1);
@@ -248,27 +259,4 @@ function [best_threshold, best_f1, A2_pred, metrics] = threshold_PR3D(A2, candid
     ylabel('Precision');
     legend('PR Curve', 'Best Threshold', 'Location', 'best');
     grid on;
-    
-    % 添加阈值分布信息
-    figure;
-    histogram(scores, 50, 'FaceColor', [0.5, 0.5, 0.9]);
-    hold on;
-    line([best_threshold, best_threshold], ylim, 'Color', 'r', 'LineWidth', 2);
-    hold off;
-    title(sprintf('Score Distribution with Best Threshold (%.4f)', best_threshold));
-    xlabel('Prediction Score');
-    ylabel('Frequency');
-    legend('Score Distribution', 'Best Threshold', 'Location', 'best');
-    
-    % 显示关键指标
-    fprintf('=== 最佳阈值评估结果 ===\n');
-    fprintf('最佳阈值: %.4f\n', best_threshold);
-    fprintf('F1分数: %.4f\n', best_f1);
-    fprintf('\n=== 最终预测评估 ===\n');
-    fprintf('TP: %d\n', tp_count);
-    fprintf('FP: %d\n', fp_count);
-    fprintf('FN: %d\n', fn_count);
-    fprintf('Precision: %.4f\n', precision);
-    fprintf('Recall: %.4f\n', recall);
-    fprintf('F1: %.4f\n', f1);
 end
