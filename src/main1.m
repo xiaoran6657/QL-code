@@ -4,14 +4,18 @@ clear, clc
 % Set a fixed random seed for reproducibility
 rng(12);
 
-pathname = '..\data\';  % 单纯复形
+pathname = '.\data\';  % 单纯复形
 % Parameters for the networks
-nNodes_list = [100];  % Number of nodes
-K1s = [16];  % Average degree of two-body interaction
-K2s = [6];    % Average degree of three-body interaction
+%nNodes_list = [100];  % Number of nodes
 
-networkType = 'ER';
-Timespan = 400000;
+K1s = [12, 14, 16, 18];  % Average degree of two-body interaction
+K2s = [3, 4, 5];    % Average degree of three-body interaction
+[X, Y] = meshgrid(K1s, K2s);  % 生成网格矩阵 [[1,2,3]; [1,2,3]; ...] 和 [[6,6,6]; [7,7,7]; ...]
+K1K2s = [X(:), Y(:)];
+
+networkType = 'SW';
+nNodes = 100;
+Timespan = 200000;
 
 %dynamics parameters
 %Virtual a
@@ -26,50 +30,59 @@ mu = 0.8;       % Recovery rate
 rhoa = 0.2;     % initial density of A
 rhob = 0.25;    % initial density of I
 
-for nNodes=nNodes_list
-    for k1=K1s
-        for k2 = K2s
-            if (k1-2*k2)<=0  % avoid Prob_A1<=0 and mLinks<=0
-                continue
-            end
-            filename = strcat(networkType, 'm', num2str(Timespan), 'n', num2str(nNodes), 'ka', num2str(k1), 'kb', num2str(k2));
-            disp(filename)
+%parfor nNodes=nNodes_list
 
-            Prob_A1 = (k1-2*k2)/(nNodes-1-2*k2);  % Connection probability of two-body interaction in Virtual layer
-            Prob_A2 = 2*k2/((nNodes-1)*(nNodes-2));  % Connection probability of three-body interaction in Virtual layer
-            Prob_B = 0.12;
-            mLinks = ceil(nNodes*(k1-2*k2)/(2*nNodes-4*k2));  % the mLinks edges each new node connects to the old nodes with degree preference
-    
-            % Generate two networks
-            if isequal(networkType, 'ER')
-                network1 = erdos_renyi(nNodes, Prob_A1);
-                network2 = erdos_renyi(nNodes, Prob_A1);
-            elseif isequal(networkType, 'BA')
-                network1 = barabasi_albert(nNodes, mLinks);
-                network2 = barabasi_albert(nNodes, mLinks);
-            elseif isequal(networkType, 'SW')
-                network1 = watts_strogatz(nNodes, 2*mLinks, Prob_A1);
-                network2 = watts_strogatz(nNodes, 2*mLinks, Prob_A1);
-            end
+parfor idx = 1:size(K1K2s,1)
+    k1 = K1K2s(idx, 1);
+    k2 = K1K2s(idx, 2);
 
-            % Get adjacency matrices for both networks
-            A1 = adjacency(network1);
-            B = adjacency(network2);
-
-            % Add and highlight second-order edges in the first layer
-            A2 = [];
-            while isempty(A2)
-                [network1, A2] = addSecondOrderEdges(network1, Prob_A2);
-            end
-            
-            
-            % Node status generation and save
-            [UAU_state_nodes,SIS_state_nodes]=UAU_SIS_state(A1,A2,lambda1,lambda2,delta,B,beta1,beta2,mu,Timespan,rhoa,rhob);
-            fun_save(pathname, filename, A1, A2, B, UAU_state_nodes, SIS_state_nodes);
-        
-        end
+    if (k1-2*k2)<=0  % avoid Prob_A1<=0 and mLinks<=0
+        continue
     end
+    filename = strcat(networkType, 'm', num2str(Timespan), 'n', num2str(nNodes), 'ka', num2str(k1), 'kb', num2str(k2));
+    if exist(strcat(pathname,filename), 'file')
+        continue
+    end
+
+    tic;
+
+    Prob_A1 = (k1-2*k2)/(nNodes-1-2*k2);  % Connection probability of two-body interaction in Virtual layer
+    Prob_A2 = 2*k2/((nNodes-1)*(nNodes-2));  % Connection probability of three-body interaction in Virtual layer
+    Prob_B = 0.12;
+    mLinks = ceil(nNodes*(k1-2*k2)/(2*nNodes-4*k2));  % the mLinks edges each new node connects to the old nodes with degree preference
+    
+    network1 = []; network2 = [];
+    % Generate two networks
+    if isequal(networkType, 'ER')
+        network1 = erdos_renyi(nNodes, Prob_A1);
+        network2 = erdos_renyi(nNodes, Prob_A1);
+    elseif isequal(networkType, 'BA')
+        network1 = barabasi_albert(nNodes, mLinks);
+        network2 = barabasi_albert(nNodes, mLinks);
+    elseif isequal(networkType, 'SW')
+        network1 = watts_strogatz(nNodes, 2*mLinks, Prob_A1);
+        network2 = watts_strogatz(nNodes, 2*mLinks, Prob_A1);
+    end
+
+    % Add and highlight second-order edges in the first layer
+    A2 = [];
+    while isempty(A2)
+        [network1, A2] = addSecondOrderEdges(network1, Prob_A2);
+    end
+
+    % Get adjacency matrices for both networks
+    A1 = adjacency(network1);
+    B = adjacency(network2);
+
+    
+    % Node status generation and save
+    [UAU_state_nodes,SIS_state_nodes]=UAU_SIS_state(A1,A2,lambda1,lambda2,delta,B,beta1,beta2,mu,Timespan,rhoa,rhob);
+    fun_save(pathname, filename, A1, A2, B, UAU_state_nodes, SIS_state_nodes);
+
+    time = toc;
+    fprintf("%s, time: %.3f(s)\n", filename, time);
 end
+%end
 
 function fun_save(pathname, filename, A1, A2, B, UAU_state_nodes, SIS_state_nodes)
     save(strcat(pathname, filename), 'A1', 'A2', 'B', 'UAU_state_nodes', 'SIS_state_nodes');

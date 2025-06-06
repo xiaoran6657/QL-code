@@ -12,13 +12,13 @@ function [ori_A_adj, P3_tensor] = Reconstruction_TStaylor7_GPU(UAU_state_nodes, 
   % TODO
     % 1.替换TS1 lasso
     % 2.超参调节lambda, lambda_Delta
-    % 3.
+    % 3.使用牛顿迭代法，提供海森矩阵
   
   % Transfer input data to GPU if available
-  %if gpuDeviceCount > 0
-  %  UAU_state_nodes = gpuArray(UAU_state_nodes);
-  %  SIS_state_nodes = gpuArray(SIS_state_nodes);
-  %end
+  if gpuDeviceCount > 0
+    UAU_state_nodes = gpuArray(UAU_state_nodes);
+    SIS_state_nodes = gpuArray(SIS_state_nodes);
+  end
 
   [~, n]=size(UAU_state_nodes);  % 共m个时刻，n个节点
   ori_A_adj = zeros(n, n);
@@ -33,28 +33,26 @@ function [ori_A_adj, P3_tensor] = Reconstruction_TStaylor7_GPU(UAU_state_nodes, 
           tic; % 开始计时
     
           % 全局数据加载
-          UAU_state_nodes_copy = gpuArray(UAU_state_nodes_global.Value);
-          SIS_state_nodes_copy = gpuArray(SIS_state_nodes_global.Value);
+          %UAU_state_nodes_copy = gpuArray(UAU_state_nodes_global.Value);
+          %SIS_state_nodes_copy = gpuArray(SIS_state_nodes_global.Value);
     
-          Lambda = 1e-3;  % lasso parameter
           % 初始化\alpha
           lambda = 0.1;       alpha = gpuArray(log(1-lambda));
           lambda_Delta = 0.9; alpha_Delta = gpuArray(log(1-lambda_Delta));
           
           options1 = optimoptions('fsolve', 'Display', 'none');
-          options2 = statset('Display', 'off');
     
           %% step one --- Taylor1
           % ------------------- Extract ------------------- 
-          [m,n]=size(UAU_state_nodes_copy); % [T, n]
-          A1=UAU_state_nodes_copy(:,nod);   % Extract Virtual layer's column i, [1,n]
-          A2=UAU_state_nodes_copy;
+          [m,n]=size(UAU_state_nodes_global.Value); % [T, n]
+          A1=UAU_state_nodes_global.Value(:,nod);   % Extract Virtual layer's column i, [1,n]
+          A2=UAU_state_nodes_global.Value;
           t=find(A1==0);  % 寻找A1中0元素的位置，将位置记录至t，如t=[2 3 8]
           t(t==m)=[];     % 只记录前m-1个时刻里，A1的0元素的位置，保证t+1时刻还有数据
           A2=A2(t,:);     % 这些有效时刻所有节点的状态
           A1=A1(t+1,:);   % 下一时刻nod虚拟层的状态
     
-          B1=SIS_state_nodes_copy(:,nod);   % Extract Physical layer's column i    
+          B1=SIS_state_nodes_global.Value(:,nod);   % Extract Physical layer's column i    
           B1=B1(t+1,:);   % 下一时刻nod实际层的状态
     
           Y=A1.*(1-B1);   % \={Q}^i(t_m)表达式第一项通过t的筛选而导致必等于1==>
@@ -138,7 +136,7 @@ function [ori_A_adj, P3_tensor] = Reconstruction_TStaylor7_GPU(UAU_state_nodes, 
             'SpecifyObjectiveGradient', true, ...  % 使用自定义雅可比
             'StepTolerance', 1e-8, ...                 % 放宽步长容差
             'FunctionTolerance', 1e-6, ...             % 放宽函数值容差
-            'MaxIterations', 50);
+            'MaxIterations', 100);
             %'Display', 'iter', ...
     
           % 变量边界（强制变量在[0,1]区间）
@@ -177,10 +175,10 @@ function [ori_A_adj, P3_tensor] = Reconstruction_TStaylor7_GPU(UAU_state_nodes, 
       end
 
       % ------------------- 变量清理 -------------------
-      %A1=[]; A2=[]; A2j=[]; A3=[]; B1=[]; C=[]; D=[]; M=[]; Oi=[]; P1=[]; 
-      %P2=[]; P3=[]; P4=[]; P5=[]; SIS_state_nodes_copy=[]; UAU_state_nodes_copy=[];
-      %TS_X1=[]; Vi=[]; Wi=[]; X=[]; X0=[]; Y=[]; f=[]; g=[]; lb=[]; neig=[];
-      %neig_subset=[]; t=[]; temp1=[]; temp2=[]; theta1=[]; theta2=[]; ub=[]; 
+      A1=[]; A2=[]; A2j=[]; A3=[]; B1=[]; C=[]; D=[]; M=[]; Oi=[]; P1=[]; 
+      P2=[]; P3=[]; P4=[]; P5=[]; SIS_state_nodes_copy=[]; UAU_state_nodes_copy=[];
+      TS_X1=[]; Vi=[]; Wi=[]; X=[]; X0=[]; Y=[]; f=[]; g=[]; lb=[]; neig=[];
+      neig_subset=[]; t=[]; temp1=[]; temp2=[]; theta1=[]; theta2=[]; ub=[]; 
 
   end
 end
@@ -243,9 +241,9 @@ function [R, J] = compute_residual_torch(theta,A2,A3,Oi,Vi,Wi,X,Y,alpha,alpha_De
     J = gather([J11, J12; J21, J22]);
 
     % ------------------- 变量清理 -------------------
-    %mask=[]; k_indices=[]; i_indices=[]; temp2_matrix=[]; D1=[]; D2=[];
-    %S1=[]; S2=[]; proj_A2_S1=[]; proj_A3_S2=[]; temp2S2=[]; Y1_pred=[]; Y2_pred=[];
-    %J11=[]; J12=[]; J21=[]; J22=[]; 
+    mask=[]; k_indices=[]; i_indices=[]; temp2_matrix=[]; D1=[]; D2=[];
+    S1=[]; S2=[]; proj_A2_S1=[]; proj_A3_S2=[]; temp2S2=[]; Y1_pred=[]; Y2_pred=[];
+    J11=[]; J12=[]; J21=[]; J22=[];
 end
 
 

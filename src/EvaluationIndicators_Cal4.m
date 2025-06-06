@@ -1,4 +1,4 @@
-function [ACC, F1, ACC_tri, F1_tri] = EvaluationIndicators_Cal4(A1, A2, ori_A_adj, P3_tensor)
+function [ACC, F1, ACC_tri, F1_tri] = EvaluationIndicators_Cal4(A1, A2, ori_A_adj, P3_tensor, opt)
     %%% PR曲线查看重建结果分离度，实验结果不可用于论文表述 %%%
 
     %Input:
@@ -15,7 +15,12 @@ function [ACC, F1, ACC_tri, F1_tri] = EvaluationIndicators_Cal4(A1, A2, ori_A_ad
 
     % ---------- Truncate the final two-body matrices ----------
     Pl = ori_A_adj(:);
-    thresh2 = threshold_PR(A1(:), Pl, 1);  % PR曲线选择最佳阈值
+    if opt == "PR"
+        thresh2 = threshold_PR(A1(:), Pl, 0);  % PR曲线选择最佳阈值
+    else
+        thresh2 = graythresh(Pl);  % Otsu's Method, 最大类间方差法
+    end
+
     for i = 1:n
         a = ori_A_adj(i,:);
         a(a>=thresh2) = 1;
@@ -67,14 +72,114 @@ function [ACC, F1, ACC_tri, F1_tri] = EvaluationIndicators_Cal4(A1, A2, ori_A_ad
             end
         end
     end
-    metrics = threshold_PR3D(A2, candidates, scores, n);  % PR曲线选择最佳阈值
 
-    disp('二阶：\n');
-    fprintf('tp: %d, fp: %d, fn: %d, tn: %d\n', metrics.TP, metrics.FP, metrics.FN, metrics.TN);
-    fprintf('ACC: %.4f, Precision: %.4f, Recall: %.4f, F1: %.4f\n', metrics.Acc, metrics.Precision, metrics.Recall, metrics.F1);
+    if opt == "PR"
+        metrics = threshold_PR3D(A2, candidates, scores, n, 0);  % PR曲线选择最佳阈值
+        disp('二阶：\n');
+        fprintf('tp: %d, fp: %d, fn: %d, tn: %d\n', metrics.TP, metrics.FP, metrics.FN, metrics.TN);
+        fprintf('ACC: %.4f, Precision: %.4f, Recall: %.4f, F1: %.4f\n', metrics.Acc, metrics.Precision, metrics.Recall, metrics.F1);
+    
+        ACC_tri = metrics.Acc;
+        F1_tri = metrics.F1;
+    else
+        %{
+        % 计算稀疏性和分数分布特征
+        num_edges = sum(ori_A_bin(:)) / 2;
+        sparsity = num_edges / nchoosek(n,2);
+        skew = skewness(scores);
+        kurt = kurtosis(scores);
+    
+        % 动态调整k_final
+        alpha = 0.02;  % 调参
+        beta = 0.01;
+        gamma = -0.1;
+    
+        % 基础计算
+        k_base = alpha * sparsity;
+        k_skew = k_base * (1 + beta * skew);
+        
+        % 峰度处理策略选择
+        if kurt > 100
+            % 策略1：对数归一化（适用于极端峰度）
+            kurt_log = log10(kurt);
+            kurt_normalized = 2 * (kurt_log - 1) / 3 - 1;  % 映射log10(100)~log10(10000)到[-1,1]
+            kurt_normalized = max(-1, min(1, kurt_normalized));
+            k_final = k_skew * (1 + gamma * kurt_normalized);
+        elseif kurt > 10
+            % 策略2：渐近函数处理
+            kurt_adjustment = gamma * sign(kurt-3) * (1 - exp(-0.1*abs(kurt-3)));
+            k_final = k_skew * (1 + kurt_adjustment);
+        else
+            % 策略3：原始公式
+            k_final = k_skew * (1 + gamma * (kurt - 3));
+        end
+        
+        % 最终约束
+        k_final = max(0.001, min(0.1, k_final));
+        %}
 
-    ACC_tri = metrics.Acc;
-    F1_tri = metrics.F1;
+        % 全局阈值选择
+        if ~isempty(scores)
+            [scores_sorted, idx] = sort(scores, 'descend');
+            %k = round(0.003 * numel(scores_sorted));
+            %k = round(k_final * numel(scores_sorted));
+            %thresh2 = scores_sorted(max(1, k));
+            thresh2 = graythresh(scores_sorted);
+            valid_idx = idx(scores_sorted >= thresh2);
+            triangles_pred = candidates(valid_idx, :);
+        else
+            triangles_pred = [];
+        end
+    
+    
+        if ~isempty(triangles_pred)
+            A2t = sortrows(sort(A2,2),1);  % 三元组内升序排列，三元组间升序排列
+    
+            % 使用 ismember 替代双重循环
+            tp = sum(ismember(A2t, triangles_pred, 'rows'));
+            fp = size(triangles_pred, 1) - tp;  % 计算 FP（B 中不在 A 中的部分）
+            fn = size(A2t, 1) - tp;  % 计算 FN（A 中不在 B 中的部分）
+            tn = nchoosek(n,3) - tp - fp - fn;  % 正确计算所有可能三元组数量
+    
+            ACC_tri = (tn + tp) / (tp + fp + fn + tn);  % 避免除以0
+            precision_tri = tp / (tp + fp);
+            recall_tri = tp / (tp + fn);
+            F1_tri = 2 * (precision_tri * recall_tri) / (precision_tri + recall_tri + eps);
+        else
+            tp=0; fp=0; fn=0; tn=0;
+            ACC_tri=0; precision_tri=0; recall_tri=0; F1_tri=0;
+        end
+        
+        disp('二阶：\n');
+        fprintf('tp: %d, fp: %d, fn: %d, tn: %d\n', tp, fp, fn, tn);
+        fprintf('ACC: %.4f, Precision: %.4f, Recall: %.4f, F1: %.4f\n', ACC_tri, precision_tri, recall_tri, F1_tri);
+        ori_A_bin_bu = ori_A_bin;
+        % ---------- 补充一阶边 ----------
+        for idx=1:size(triangles_pred,1)
+            i = triangles_pred(idx, 1);
+            j = triangles_pred(idx, 2);
+            k = triangles_pred(idx, 3);
+    
+            ori_A_bin_bu(i,j)=1; ori_A_bin_bu(j,i)=1;
+            ori_A_bin_bu(i,k)=1; ori_A_bin_bu(k,i)=1;
+            ori_A_bin_bu(k,j)=1; ori_A_bin_bu(j,k)=1;
+        end
+    
+        % ---------- 计算指标 ----------
+        tp = sum(A1(:) & ori_A_bin_bu(:));    % 真正例
+        fp = sum(~A1(:) & ori_A_bin_bu(:));   % 假正例
+        fn = sum(A1(:) & ~ori_A_bin_bu(:));   % 假反例
+        tn = sum(~A1(:) & ~ori_A_bin_bu(:));  % 真反例
+    
+        ACC = (tn + tp) / (tp + fp + fn + tn);  % 避免除以0
+        precision = tp / (tp + fp);
+        recall = tp / (tp + fn);
+        F1 = 2 * (precision * recall) / (precision + recall + eps);
+    
+        disp('补充一阶：\n');
+        fprintf('tp: %d, fp: %d, fn: %d, tn: %d\n', tp, fp, fn, tn);
+        fprintf('ACC: %.4f, Precision: %.4f, Recall: %.4f, F1: %.4f\n', ACC, precision, recall, F1);
+    end
 end
 
 function optimal_threshold = threshold_PR(y_true, y_prob, show)
@@ -124,10 +229,9 @@ function optimal_threshold = threshold_PR(y_true, y_prob, show)
         grid on;
         legend('PR Curve', 'Optimal Threshold', 'Location', 'southwest');
     end
-
 end
 
-function metrics = threshold_PR3D(A2, candidates, scores, n)
+function metrics = threshold_PR3D(A2, candidates, scores, n, show)
     % 数据准备与预处理
     gt_set = unique(A2, 'rows'); % 去除重复的真实三元组
     total_positives = size(gt_set, 1);
@@ -247,16 +351,18 @@ function metrics = threshold_PR3D(A2, candidates, scores, n)
         'F1', f1);
     
     % 绘制PR曲线
-    figure;
-    plot(recalls, precisions, 'b-', 'LineWidth', 1.5);
-    hold on;
-    plot(recalls(best_idx), precisions(best_idx), 'ro', ...
-        'MarkerSize', 10, 'LineWidth', 2);
-    hold off;
-    
-    title(sprintf('Precision-Recall Curve (Best F1=%.3f @ Threshold=%.4f)', best_f1, best_threshold));
-    xlabel('Recall');
-    ylabel('Precision');
-    legend('PR Curve', 'Best Threshold', 'Location', 'best');
-    grid on;
+    if show
+        figure;
+        plot(recalls, precisions, 'b-', 'LineWidth', 1.5);
+        hold on;
+        plot(recalls(best_idx), precisions(best_idx), 'ro', ...
+            'MarkerSize', 10, 'LineWidth', 2);
+        hold off;
+        
+        title(sprintf('Precision-Recall Curve (Best F1=%.3f @ Threshold=%.4f)', best_f1, best_threshold));
+        xlabel('Recall');
+        ylabel('Precision');
+        legend('PR Curve', 'Best Threshold', 'Location', 'best');
+        grid on;
+    end
 end
