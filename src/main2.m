@@ -9,7 +9,7 @@ pathname2 = '.\redata\';
 Timespan_list = 1:20;
 Timespan_list = Timespan_list*10000;
 
-filename = "ERm200000n100ka18kb3.mat";
+filename = "ERm200000n200ka12kb3.mat";
 load(strcat(pathname1, filename));
 
 recon_state = repmat(struct('Timespan', [], 'ori_A_adj',[], 'P3_tensor',[]), 1, size(Timespan_list,2));  % 预分配结构体
@@ -28,8 +28,8 @@ for idx = 1:size(Timespan_list,2)
   end
   
   tic;
-  if idx < 5
-      parpool(10);
+  if idx < 4
+      parpool(8);
   else
       parpool(2);
   end

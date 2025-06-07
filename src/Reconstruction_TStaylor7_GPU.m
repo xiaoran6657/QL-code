@@ -9,11 +9,6 @@ function [ori_A_adj, P3_tensor] = Reconstruction_TStaylor7_GPU(UAU_state_nodes, 
       % ori_A_adj: the reconstructed network two-body interaction, [n, n]
       % P3_tensor: the reconstructed network three-body interaction, [n, n, n]
   
-  % TODO
-    % 1.替换TS1 lasso
-    % 2.超参调节lambda, lambda_Delta
-    % 3.使用牛顿迭代法，提供海森矩阵
-  
   % Transfer input data to GPU if available
   if gpuDeviceCount > 0
     UAU_state_nodes = gpuArray(UAU_state_nodes);

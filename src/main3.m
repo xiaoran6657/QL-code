@@ -4,7 +4,7 @@ Timespan_list = Timespan_list*10000;
 
 pathname2 = '.\redata\';
 
-filename = "ERm200000n100ka18kb5.mat";
+filename = "ERm200000n100ka18kb3.mat";
 load(strcat(pathname2, "TST12_",filename));
 
 parpool(20)

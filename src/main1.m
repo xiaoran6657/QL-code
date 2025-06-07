@@ -8,13 +8,13 @@ pathname = '.\data\';  % 单纯复形
 % Parameters for the networks
 %nNodes_list = [100];  % Number of nodes
 
-K1s = [12, 14, 16, 18];  % Average degree of two-body interaction
-K2s = [3, 4, 5];    % Average degree of three-body interaction
+K1s = [12];  % Average degree of two-body interaction
+K2s = [3];    % Average degree of three-body interaction
 [X, Y] = meshgrid(K1s, K2s);  % 生成网格矩阵 [[1,2,3]; [1,2,3]; ...] 和 [[6,6,6]; [7,7,7]; ...]
 K1K2s = [X(:), Y(:)];
 
-networkType = 'SW';
-nNodes = 100;
+networkType = 'ER';
+nNodes = 200;
 Timespan = 200000;
 
 %dynamics parameters
@@ -32,7 +32,7 @@ rhob = 0.25;    % initial density of I
 
 %parfor nNodes=nNodes_list
 
-parfor idx = 1:size(K1K2s,1)
+for idx = 1:size(K1K2s,1)
     k1 = K1K2s(idx, 1);
     k2 = K1K2s(idx, 2);
 
